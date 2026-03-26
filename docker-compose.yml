@@ -5,14 +5,6 @@
 # Sistema isolado via Docker com script Python de alta performance para 
 # monitoramento paralelo de 8 dispositivos. Dados expostos via API e 
 # visualizados em Painel Web (Nginx) com auto-update de 2s e fuso horário SP.
-#
-# DESCRIÇÃO DETALHADA:
-# 1. CAMADA API (PYTHON): Pings paralelos em 8 ativos (5 pacotes cada). 
-#    Uso de PYTHONUNBUFFERED=1 para logs instantâneos no terminal.
-# 2. CAMADA WEB (NGINX): Servidor leve entregando HTML com visualização 
-#    vertical (<pre>) e atualização automática via JavaScript (setInterval).
-# 3. CAMADA INFRA (DOCKER): Sincronização de relógio via /etc/localtime e TZ.
-#    Volumes mapeados para edição de código em tempo real (Hot-Reload).
 # ==============================================================================
 services:
   # O Cérebro
@@ -26,8 +18,15 @@ services:
     volumes:
       - ./api:/app
       - /etc/localtime:/etc/localtime:ro
+    # Adicionada a flag --no-access-log para limpar o terminal
     command: 
-      uvicorn main:app --host 0.0.0.0 --port 8000 --reload  
+      uvicorn main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
+    # Limita o crescimento dos arquivos de log no disco
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # A Cara do Sistema (Peça pronta do Lego)
   painel-web:
@@ -37,5 +36,11 @@ services:
     environment:
       - TZ=America/Sao_Paulo
     volumes:
-      - ./interface:/usr/share/nginx/html # "Injeta" seu HTML no servidor pronto
+      - ./interface:/usr/share/nginx/html  # "Injeta" seu HTML no servidor pronto
       - /etc/localtime:/etc/localtime:ro
+    # Limita logs também para o servidor web (Nginx)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
