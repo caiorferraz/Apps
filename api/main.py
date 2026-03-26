@@ -7,9 +7,10 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"])
 
 # Função que executa UM ping de forma assíncrona e ultra rápida
 async def pingar(nome, ip):
-    # -c 1 = Apenas 1 pacote
-    # -W 0.5 = Timeout de meio segundo (não espera uma eternidade se estiver offline)
-    comando = ["ping", "-c", "1", "-W", "0.5", ip]
+    # -c 2 = Envia 2 pacotes
+    # -W 0.9 = Timeout de 0.9s 
+    # -i 1 = Intervalo de 1s entre pings 
+    comando = ["ping", "-c", "2", "-i", "1", "-W", "0.9", ip]
     
     processo = await asyncio.create_subprocess_exec(
         *comando,
