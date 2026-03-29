@@ -1,58 +1,45 @@
 import asyncio
 import re
+import time
+import json
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# --- CONFIGURAÇÕES DE REDE (O "Cérebro" do Monitoramento) ---
-COUNT = "3"          # Quantidade de pacotes por tentativa
-TIMEOUT = "0.9"      # Tempo máximo de espera por cada resposta (em segundos)
-INTERVAL = "1"     # Pausa entre cada um dos 3 pacotes (em segundos)
-
-# --- CATÁLOGO DE PERFIS (POLÍTICAS DE REDE) ---
-PERFIS = {
-    "ultra_rapido": {"c": "2", "w": "0.4", "i": "0.1"}, # Foca em velocidade (Total < 1s)
-    "padrao_wifi":  {"c": "3", "w": "0.9", "i": "0.3"}, # O seu equilíbrio atual
-    "missao_critica": {"c": "5", "w": "1", "i": "0.1"} # 5 pings para garantir que não caia
-}
-# -----------------------------------------------------------
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"])
 
+# --- CONFIGURAÇÕES FIXAS --- 
+COUNT = "1"
+TIMEOUT = "0.9" # Se não responder em 900ms, cancela para dar tempo do ciclo
+INTERVAL = "0.1"
+
 async def pingar(nome, ip):
-    # Usamos as variáveis globais para montar o comando
-    comando = ["ping", "-c", COUNT, "-i", TIMEOUT, "-W", INTERVAL, ip]
-    
+    comando = ["ping", "-c", COUNT, "-W", TIMEOUT, ip]
     processo = await asyncio.create_subprocess_exec(
         *comando,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL
     )
-    
     stdout, _ = await processo.communicate()
     saida = stdout.decode()
-
-    # O Linux retorna 0 se pelo menos 1 pacote voltou (Lógica de Resiliência)
+    
     status = "ONLINE" if processo.returncode == 0 else "OFFLINE"
-
     tempos = re.findall(r'time=(\d+\.?\d*)', saida)
-    tempos = [float(t) for t in tempos]
-
+    
+    # LÓGICA DE ARREDONDAMENTO SOLICITADA
     if tempos:
-        media_raw = sum(tempos) / len(tempos)
-        media = round(media_raw, 2) if media_raw < 1 else int(media_raw)
+        val = float(tempos[0])
+        latencia = round(val, 2) if val < 1 else int(round(val))
     else:
-        media = None
+        latencia = None
 
-    return nome, {
-        "ip": ip,
-        "status": status,
-        "latencia": media
-    }
+    return nome, {"ip": ip, "status": status, "latencia": latencia}
 
 @app.get("/status")
 async def check_network():
-    # Sua lista de ativos (crescendo para 16 dispositivos!)
+    # Marca o início exato do ciclo
+    inicio_ciclo = time.time()
+
     ativos = {
         "DNS CLOUDFLARE": "1.1.1.1",
         "DNS GOOGLE": "8.8.8.8",
@@ -72,8 +59,19 @@ async def check_network():
         "PLAYSTATION": "192.168.1.19"
     }
 
-    # Dispara os pings em paralelo (Escalabilidade)
+    # Dispara todos os pings em paralelo
     tarefas = [pingar(nome, ip) for nome, ip in ativos.items()]
     resultados = await asyncio.gather(*tarefas)
     
-    return {nome: info for nome, info in resultados}
+    dados_finais = {nome: info for nome, info in resultados}
+
+    # Calcula quanto tempo o processamento levou (ex: 0.1s ou 0.8s)
+    tempo_gasto = time.time() - inicio_ciclo
+    
+    # O SEGREDO: Calcula quanto falta para completar 1.0 segundo
+    tempo_de_espera = max(0, 1.0 - tempo_gasto)
+
+    # Segura a resposta até completar o 1 segundo cravado
+    await asyncio.sleep(tempo_de_espera)
+
+    return dados_finais

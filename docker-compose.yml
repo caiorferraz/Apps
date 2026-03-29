@@ -6,6 +6,13 @@
 # monitoramento paralelo de 8 dispositivos. Dados expostos via API e 
 # visualizados em Painel Web (Nginx) com auto-update de 2s e fuso horário SP.
 # ==============================================================================
+# DESCRIÇÃO DETALHADA:
+# 1. CAMADA API (PYTHON): Pings paralelos em 8 ativos (5 pacotes cada). 
+#    Uso de PYTHONUNBUFFERED=1 para logs instantâneos no terminal.
+# 2. CAMADA WEB (NGINX): Servidor leve entregando HTML com visualização 
+#    vertical (<pre>) e atualização automática via JavaScript (setInterval).
+# 3. CAMADA INFRA (DOCKER): Sincronização de relógio via /etc/localtime e TZ.
+#    Volumes mapeados para edição de código em tempo real (Hot-Reload).
 services:
   # O Cérebro
   api-monitor:

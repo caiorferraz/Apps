@@ -27,6 +27,11 @@
             border-radius: 8px;
             border-left: 5px solid #444;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            /* TAMANHO FIXO AQUI */
+            height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
         }
 
         .online { border-left-color: #2ecc71; color: #2ecc71; }
@@ -45,23 +50,24 @@
     <script>
         function atualizar() {
             const ipServidor = window.location.hostname;
-            fetch(`http://${ipServidor}:8000/status`)
+            fetch(`/status`)
                 .then(res => res.json())
                 .then(data => {
                     const container = document.getElementById('lista-dispositivos');
                     let htmlColetado = '';
 
                     Object.entries(data).forEach(([ip, info]) => {
-                        const isOnline = info.status === "ONLINE";
+                        // ALTERAÇÃO SOLICITADA: Card fica vermelho se offline OU latência > 900
+                        const isHighLatency = info.latencia !== null && info.latencia > 900;
+                        const isOnline = info.status === "ONLINE" && !isHighLatency;
+                        
                         const classeStatus = isOnline ? 'online' : 'offline';
 
                         htmlColetado += `
                             <div class="card ${classeStatus}">
                                 <span class="ip-header">${ip}</span>
                                 <span class="latencia">${info.ip}</span>
-                                <span class="latencia">
-                                    ${info.latencia !== null ? info.latencia + ' ms' : ''}
-                                </span>
+                                ${info.latencia !== null ? `<span class="latencia">${info.latencia} ms</span>` : ''}
                             </div>
                         `;
                     });
@@ -74,8 +80,9 @@
                 });
         }
 
-        setInterval(atualizar, 6000);
+        setInterval(atualizar, 1200);
         atualizar();
+
     </script>
 </body>
 </html>
