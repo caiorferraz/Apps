@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MONITORAMENTO 262</title>
+    <style>
+        body { background: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; }
+       
+        h2 {
+            text-align: center;
+            font-size: 3em;
+            font-weight: 300;
+            margin-bottom: 30px;
+        }
+       
+        #lista-dispositivos {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .card {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #444;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            /* TAMANHO FIXO AQUI */
+            height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+
+        .online { border-left-color: #2ecc71; color: #2ecc71; }
+        .offline { border-left-color: #e74c3c; color: #e74c3c; }
+
+        .ip-header { font-weight: bold; font-family: monospace; font-size: 1.5em; margin-bottom: 5px; display: block; }
+
+        .latencia { font-size: 0.9em; display: block; }
+        
+    </style>
+</head>
+<body>
+    <h2>MONITORAMENTO 262</h2>
+    <div id="lista-dispositivos">Iniciando varredura...</div>
+
+    <script>
+        function atualizar() {
+            const ipServidor = window.location.hostname;
+            fetch(`/status`)
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('lista-dispositivos');
+                    let htmlColetado = '';
+
+                    Object.entries(data).forEach(([ip, info]) => {
+                        // ALTERAÇÃO SOLICITADA: Card fica vermelho se offline OU latência > 900
+                        const isHighLatency = info.latencia !== null && info.latencia > 900;
+                        const isOnline = info.status === "ONLINE" && !isHighLatency;
+                        
+                        const classeStatus = isOnline ? 'online' : 'offline';
+
+                        htmlColetado += `
+                            <div class="card ${classeStatus}">
+                                <span class="ip-header">${ip}</span>
+                                <span class="latencia">${info.ip}</span>
+                                ${info.latencia !== null ? `<span class="latencia">${info.latencia} ms</span>` : ''}
+                            </div>
+                        `;
+                    });
+
+                    container.innerHTML = htmlColetado;
+                })
+                .catch(err => {
+                    document.getElementById('lista-dispositivos').innerHTML =
+                        `<div style="color:orange; text-align: center; width: 100%;">Tentando reconectar à API...</div>`;
+                });
+        }
+
+        setInterval(atualizar, 1200);
+        atualizar();
+
+    </script>
+</body>
+</html>
