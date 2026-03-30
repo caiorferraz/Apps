@@ -1,11 +1,86 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-    <title></title>AFINADOR</title>
+    <meta charset="UTF-8">
+    <title>Luthier Digital - Afinador</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #121212; color: #e0e0e0; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .card { background: #1e1e1e; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #333; }
+        #nota { font-size: 80px; font-weight: bold; color: #00e676; text-shadow: 0 0 20px rgba(0, 230, 118, 0.3); }
+        #freq { font-size: 24px; color: #888; margin-top: 10px; }
+        .status { margin-top: 20px; font-size: 14px; color: #555; }
+        /* Tela de entrada para burlar o bloqueio do navegador */
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; cursor: pointer; }
+    </style>
 </head>
 <body>
-    <h1>Afinador Online</h1>
-    <p>Status: Conectado ao Docker</p>
-    <div id="freq">Aguardando sinal...</div>
+
+    <div id="overlay" onclick="iniciarAudio()">
+        <h2 style="color: #00e676;">Clique em qualquer lugar para afinar</h2>
+        <p>O navegador exige um clique para liberar o microfone.</p>
+    </div>
+
+    <div class="card">
+        <h1>Afinador RX201</h1>
+        <div id="nota">--</div>
+        <div id="freq">0.00 Hz</div>
+        <div class="status" id="status-conexao">Aguardando microfone...</div>
+    </div>
+
+    <script>
+        let audioContext;
+        let socket;
+
+        async function iniciarAudio() {
+            // Remove o overlay imediatamente
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('status-conexao').innerText = "Conectando ao processador...";
+
+            try {
+                // 1. Abre o Microfone
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+                });
+
+                // 2. Conecta o WebSocket (Porta 8000 do seu container)
+                socket = new WebSocket(`ws://${window.location.hostname}/ws/audio`);
+
+                socket.onopen = () => {
+                    document.getElementById('status-conexao').innerText = "Sistema Online - Pode tocar!";
+                    iniciarProcessamento(stream);
+                };
+
+                socket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    document.getElementById('nota').innerText = data.nota;
+                    document.getElementById('freq').innerText = data.frequencia.toFixed(2) + " Hz";
+                };
+
+                socket.onerror = (err) => {
+                    document.getElementById('status-conexao').innerText = "Erro na conexão com o servidor.";
+                };
+
+            } catch (err) {
+                console.error("Erro ao acessar microfone:", err);
+                alert("Opa! Preciso de permissão para o microfone para afinar seu violão.");
+            }
+        }
+
+        function iniciarProcessamento(stream) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+            const source = audioContext.createMediaStreamSource(stream);
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(inputData.buffer);
+                }
+            };
+        }
+    </script>
 </body>
 </html>

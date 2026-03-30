@@ -1,195 +1,81 @@
 import numpy as np
-import scipy.fftpack
-import time
-import socket
+from scipy.fftpack import fft, fftfreq
+from fastapi import FastAPI, WebSocket
+import uvicorn
 
-# Configurações de áudio de alta precisão
-SAMPLE_RATE = 44100  # Padrão de CD (ou 48000 se sua interface suportar)
-BUFFER_SIZE = 4096   # Tamanho da janela para análise (maior = mais precisão, mas mais latência)
+app = FastAPI()
 
-def analisar_harmonics(onda_sonora):
-    """Disseca a onda para encontrar a fundamental e seus harmônicos"""
-    # 1. Aplica a Transformada Rápida de Fourier (FFT)
-    fft_result = scipy.fftpack.fft(onda_sonora)
-    frequencies = scipy.fftpack.fftfreq(len(fft_result)) * SAMPLE_RATE
-    
-    # Pega apenas a parte positiva e a magnitude
-    magnitudes = np.abs(fft_result)
-    pos_mask = (frequencies > 0) & (frequencies < 2000) # Filtra até 2kHz (guitarra)
-    
-    final_freqs = frequencies[pos_mask]
-    final_mags = magnitudes[pos_mask]
-    
-    # 2. Encontra os Picos de Frequência (Harmônicos)
-    # Aqui não pegamos apenas o maior pico, pegamos os TOP 5
-    peak_indices = np.argsort(final_mags)[-5:] # Índices dos 5 maiores picos
-    picos = []
-    
-    for idx in peak_indices:
-        picos.append({
-            "freq": round(final_freqs[idx], 2),
-            "mag": round(final_mags[idx], 4)
-        })
-    
-    # Ordena os picos por frequência para identificar Fundamental, 2º, 3º...
-    picos = sorted(picos, key=lambda x: x['freq'])
-    
-    fundamental = picos[0]['freq'] if picos else 0
-    
-    return {
-        "fundamental": fundamental,
-        "harmonics": picos,
-        "timbre_signature": final_mags # Isso define o timbre da sua guitarra
-    }
+print(" >>> OFICINA LIGADA: LOGICA ATUALIZADA <<< ")
 
-def analisar_sustain(mags_historico):
-    """Analisa como a energia da fundamental cai ao longo do tempo ( Decay )"""
-    if len(mags_historico) < 10: return 0
-    
-    # Cálculo de inclinação de reta (Regressão Linear Simples) no decay
-    x = np.arange(len(mags_historico))
-    y = np.array(mags_historico)
-    
-    # Quanto mais negativo o 'slope', mais rápido o sustain morre
-    slope, intercept = np.polyfit(x, y, 1)
-    return slope
+# Configurações de áudio
+SAMPLE_RATE = 44100
+BUFFER_SIZE = 4096
 
-# --- LOOP PRINCIPAL DO ANALISTA ---
-def main():
-    # Setup de rede para ouvir o Windows (via UDP)
-    sock = socket.socket(socket.socket.AF_INET, socket.socket.SOCK_DGRAM)
-    sock.bind(('0.0.0.0', 12345)) # Ouve na porta do Docker
-    
-    mags_fundamental = [] # Para medir sustain
-    last_print = time.time()
-    
-    print(f"✅ Analista de Áudio Operacional. Ouvindo stream UDP na porta 12345...")
+def get_nota_e_freq(audio_data):
+    """Transforma os bytes do microfone em Nota e Frequência"""
+    if len(audio_data) == 0:
+        return "--", 0.0
 
-    while True:
-        # 1. Recebe o áudio bruto do Windows via Rede
-        data, addr = sock.recvfrom(BUFFER_SIZE * 2) # *2 pq são shorts (16bit)
-        onda_sonora = np.frombuffer(data, dtype=np.int16)
-        
-        # 2. Executa a análise de Harmônicos
-        dados = analisar_harmonics(onda_sonora)
-        
-        # Guarda a magnitude da fundamental para cálculo de sustain
-        if dados['harmonics']:
-            mags_fundamental.append(dados['harmonics'][0]['mag'])
-            if len(mags_fundamental) > 50: mags_fundamental.pop(0)
+    # --- ADIÇÃO: VERIFICAÇÃO RMS (ENERGIA REAL) ---
+    # Calcula a média quadrática para ignorar ruídos de fundo
+    rms = np.sqrt(np.mean(audio_data**2))
+    if rms < 0.01:  # Limiar de silêncio (ajuste conforme o microfone do Zenfone)
+        return "--", 0.0
+    # ----------------------------------------------
+    
+    # Cálculo de FFT (Física do Som)
+    yf = fft(audio_data)
+    xf = fftfreq(len(audio_data), 1 / SAMPLE_RATE)
+    
+    # Filtro para frequências de violão (70Hz a 1300Hz)
+    idx = np.where((xf > 70) & (xf < 1300))
+    xf = xf[idx]
+    yf = np.abs(yf[idx])
+    
+    # Critério de pico na magnitude da FFT
+    if len(yf) == 0 or np.max(yf) < 0.05: 
+        return "--", 0.0
+
+    freq_fundamental = xf[np.argmax(yf)]
+    
+    # ... (mantenha o código anterior até a linha da freq_fundamental)
+
+    freq_fundamental = xf[np.argmax(yf)]
+    
+    # --- ALTERAÇÃO: TRAVA DE SEGURANÇA PARA FREQUÊNCIA ---
+    # Se a frequência for menor que a nota mais grave do violão (E2 ~82Hz), ignoramos.
+    if freq_fundamental < 75: 
+        return "--", 0.0
+    # ----------------------------------------------------
+
+    # Mapeamento de nota (Base 448Hz para sua micro-afinação)
+    notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    h = 12 * np.log2(freq_fundamental / 448.0)
+    n = int(round(h) + 69)
+    nome_nota = notas[n % 12]
+    
+    return nome_nota, float(freq_fundamental)
+
+@app.websocket("/audio")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    print("Zenfone/PC conectado ao processador de áudio!")
+    try:
+        while True:
+            # Recebe o áudio bruto enviado pelo navegador
+            data = await websocket.receive_bytes()
+            audio_data = np.frombuffer(data, dtype=np.float32)
             
-        # 3. Executa análise de Sustain (a cada 0.5s)
-        if time.time() - last_print > 0.5:
-            sustain_rate = analisar_sustain(mags_fundamental)
+            # Processa a física do som com filtro RMS
+            nota, freq = get_nota_e_freq(audio_data)
             
-            # Print de debug no terminal do WSL
-            if dados['fundamental'] > 50: # Se houver som
-                print(f"--- ANÁLISE DE CORDA ---")
-                print(f"🎵 Nota (Fundamental): {dados['fundamental']:.2f} Hz")
-                print(f"📊 Harmônicos Detectados (Filtro < 2kHz):")
-                for h in dados['harmonics']:
-                    print(f"  > Freq: {h['freq']} Hz | Mag: {h['mag']}")
-                print(f"⏳ Sustain (Decay Rate): {sustain_rate:.5f}")
-                print(f"------------------------\n")
-            
-            last_print = time.time()
+            # Devolve o resultado em tempo real para a tela
+            await websocket.send_json({
+                "nota": nota,
+                "frequencia": freq
+            })
+    except Exception as e:
+        print(f"Conexão encerrada: {e}")
 
 if __name__ == "__main__":
-    main()import numpy as np
-    import scipy.fftpack
-    import time
-    import socket
-    
-    # Configurações de áudio de alta precisão
-    SAMPLE_RATE = 44100  # Padrão de CD (ou 48000 se sua interface suportar)
-    BUFFER_SIZE = 4096   # Tamanho da janela para análise (maior = mais precisão, mas mais latência)
-    
-    def analisar_harmonics(onda_sonora):
-        """Disseca a onda para encontrar a fundamental e seus harmônicos"""
-        # 1. Aplica a Transformada Rápida de Fourier (FFT)
-        fft_result = scipy.fftpack.fft(onda_sonora)
-        frequencies = scipy.fftpack.fftfreq(len(fft_result)) * SAMPLE_RATE
-        
-        # Pega apenas a parte positiva e a magnitude
-        magnitudes = np.abs(fft_result)
-        pos_mask = (frequencies > 0) & (frequencies < 2000) # Filtra até 2kHz (guitarra)
-        
-        final_freqs = frequencies[pos_mask]
-        final_mags = magnitudes[pos_mask]
-        
-        # 2. Encontra os Picos de Frequência (Harmônicos)
-        # Aqui não pegamos apenas o maior pico, pegamos os TOP 5
-        peak_indices = np.argsort(final_mags)[-5:] # Índices dos 5 maiores picos
-        picos = []
-        
-        for idx in peak_indices:
-            picos.append({
-                "freq": round(final_freqs[idx], 2),
-                "mag": round(final_mags[idx], 4)
-            })
-        
-        # Ordena os picos por frequência para identificar Fundamental, 2º, 3º...
-        picos = sorted(picos, key=lambda x: x['freq'])
-        
-        fundamental = picos[0]['freq'] if picos else 0
-        
-        return {
-            "fundamental": fundamental,
-            "harmonics": picos,
-            "timbre_signature": final_mags # Isso define o timbre da sua guitarra
-        }
-    
-    def analisar_sustain(mags_historico):
-        """Analisa como a energia da fundamental cai ao longo do tempo ( Decay )"""
-        if len(mags_historico) < 10: return 0
-        
-        # Cálculo de inclinação de reta (Regressão Linear Simples) no decay
-        x = np.arange(len(mags_historico))
-        y = np.array(mags_historico)
-        
-        # Quanto mais negativo o 'slope', mais rápido o sustain morre
-        slope, intercept = np.polyfit(x, y, 1)
-        return slope
-    
-    # --- LOOP PRINCIPAL DO ANALISTA ---
-    def main():
-        # Setup de rede para ouvir o Windows (via UDP)
-        sock = socket.socket(socket.socket.AF_INET, socket.socket.SOCK_DGRAM)
-        sock.bind(('0.0.0.0', 12345)) # Ouve na porta do Docker
-        
-        mags_fundamental = [] # Para medir sustain
-        last_print = time.time()
-        
-        print(f"✅ Analista de Áudio Operacional. Ouvindo stream UDP na porta 12345...")
-    
-        while True:
-            # 1. Recebe o áudio bruto do Windows via Rede
-            data, addr = sock.recvfrom(BUFFER_SIZE * 2) # *2 pq são shorts (16bit)
-            onda_sonora = np.frombuffer(data, dtype=np.int16)
-            
-            # 2. Executa a análise de Harmônicos
-            dados = analisar_harmonics(onda_sonora)
-            
-            # Guarda a magnitude da fundamental para cálculo de sustain
-            if dados['harmonics']:
-                mags_fundamental.append(dados['harmonics'][0]['mag'])
-                if len(mags_fundamental) > 50: mags_fundamental.pop(0)
-                
-            # 3. Executa análise de Sustain (a cada 0.5s)
-            if time.time() - last_print > 0.5:
-                sustain_rate = analisar_sustain(mags_fundamental)
-                
-                # Print de debug no terminal do WSL
-                if dados['fundamental'] > 50: # Se houver som
-                    print(f"--- ANÁLISE DE CORDA ---")
-                    print(f"🎵 Nota (Fundamental): {dados['fundamental']:.2f} Hz")
-                    print(f"📊 Harmônicos Detectados (Filtro < 2kHz):")
-                    for h in dados['harmonics']:
-                        print(f"  > Freq: {h['freq']} Hz | Mag: {h['mag']}")
-                    print(f"⏳ Sustain (Decay Rate): {sustain_rate:.5f}")
-                    print(f"------------------------\n")
-                
-                last_print = time.time()
-    
-    if __name__ == "__main__":
-        main()
+    uvicorn.run(app, host="0.0.0.0", port=8001)

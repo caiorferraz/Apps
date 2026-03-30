@@ -6,6 +6,7 @@ FROM python:3.9-slim-bullseye
 RUN apt-get update && apt-get install -y \
     gcc \
     gfortran \
+    libatlas-base-dev \
     libfftw3-dev \
     libasound2-dev \
     python3-pyaudio \
@@ -19,6 +20,8 @@ WORKDIR /app
 # numpy: matemática vetorial pura
 # scipy: processamento de sinal avançado (FFT, filtros)
 # librosa: a melhor biblioteca para análise musical
-RUN pip install --no-cache-dir numpy scipy librosa sounddevice pydantic fastapi uvicorn
+RUN pip install --no-cache-dir numpy scipy librosa pydantic fastapi 'uvicorn[standard]'
+
+COPY . .
 
 CMD ["python", "main.py"]

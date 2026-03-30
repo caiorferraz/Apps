@@ -2,10 +2,38 @@
 # PROJETO: ECOSSISTEMA DE SERVIÇOS CAIO (MONITOR + AFINADOR)
 # ==============================================================================
 services:
+  # O Maestro (Nginx como Proxy Reverso e Servidor Estático)
+  painel-web:
+    image: nginx:alpine
+    container_name: nginx-maestro
+    networks:
+      - internal-net
+    ports:
+      - "80:80"
+    environment:
+      - TZ=America/Sao_Paulo
+    volumes:
+      # "Injeta" seu HTML no servidor pronto
+      - ./monitor-262/interface:/usr/share/nginx/html/monitor-262
+      - ./afinador/interface:/usr/share/nginx/html/afinador
+      # Configuração do Servidor
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - api-monitor
+      - audio-processor
+    # Limita logs também para o servidor web (Nginx)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
   # O Cérebro do Monitoramento
   api-monitor:
     build: ./monitor-262/api
     container_name: api-monitor
+    networks:
+      - internal-net
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=America/Sao_Paulo
@@ -20,57 +48,25 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  # O Maestro (Nginx como Proxy Reverso e Servidor Estático)
-  painel-web:
-    image: nginx:alpine
-    container_name: nginx-maestro
-    ports:
-      - "80:80"
-    environment:
-      - TZ=America/Sao_Paulo
-    volumes:
-      # --- MAPEAMENTO DE SUBPASTAS (GAVETAS) ---
-      # "Injeta" seu HTML no servidor pronto
-      - ./monitor-262/interface:/usr/share/nginx/html/monitor-262
-      
-      # Interface do Afinador (Prepare a pasta 'afinador-guitarra/interface')
-      - ./afinador/interface:/usr/share/nginx/html/afinador
-      
-      # Configuração do Servidor
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
-      - /etc/localtime:/etc/localtime:ro
-    depends_on:
-      - api-monitor
-    # Limita logs também para o servidor web (Nginx)
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
+  # O Cérebro do Afinador
   audio-processor:
-    image: luthier-digital-base:latest
     build: ./afinador/api
+    image: luthier-digital-base:latest
+    container_name: audio-processor
     networks:
-      - audio-net
+      - internal-net
+    environment:
+      - PYTHONUNBUFFERED=1 # Garante que os prints apareçam na hora no log
+      - TZ=America/Sao_Paulo
     # O Linux precisa de acesso ao áudio, vamos expor a porta do stream
     ports:
       - "12345:12345/udp"
+      - "8001:8001" # Expõe para o Nginx e para testes diretos
     volumes:
-      - ./processor:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-  # O Rosto: Mostra o afinador ultra-preciso
-  audio-ui:
-    image: nginx:alpine
-    networks:
-      - audio-net
-    ports:
-      - "8080:80"
-    volumes:
-      - ./ui:/usr/share/nginx/html
+      - ./afinador/api:/app
+      - /etc/localtime:/etc/localtime:ro
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
 networks:
-  audio-net:
+  internal-net:
     driver: bridge
