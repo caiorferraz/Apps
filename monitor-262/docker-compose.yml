@@ -1,0 +1,48 @@
+services:
+  nginx-service:
+  # Imagem da internet
+    image: nginx:alpine
+    container_name: "nginx-container"
+    networks:
+      - internal-net
+    ports:
+      - "80:80"
+    environment:
+      - TZ=America/Sao_Paulo
+    volumes:
+      # "Injeta" o HTML no servidor pronto
+      - ./interface:/usr/share/nginx/html/monitor-262/
+      # Configuração do Servidor
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - monitor-service
+      # Limita logs também para o servidor web (Nginx)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  # O Cérebro do Monitoramento
+  monitor-service:
+    build: ./api
+    # Construída pela linha acima
+    image: monitor-img:latest
+    container_name: "monitor-container"
+    networks:
+      - internal-net
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Sao_Paulo
+    # 
+    volumes:
+      - ./api:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --no-access-log
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal-net:
+    driver: bridge

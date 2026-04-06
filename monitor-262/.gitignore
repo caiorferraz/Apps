@@ -1,0 +1,15 @@
+# Python - Caches e compilação
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes Virtuais
+venv/
+.venv/
+env/
+
+# Docker - Se você gerar logs em arquivo
+*.log
+
+# Editor Micro - Arquivos temporários
+*.swp

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PING</title>
+    <style>
+        body { background: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; }
+        
+        h2 {
+            text-align: center;
+            font-size: 3em;
+            font-weight: 300;
+            margin-bottom: 30px;
+        }
+        
+        #lista-dispositivos {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .online { 
+            border-left-color: #2ecc71 !important; 
+            color: #2ecc71 !important; 
+        }
+
+        .offline { 
+            border-left-color: #e74c3c !important; 
+            color: #e74c3c !important; 
+        }
+
+        .card {
+            background: #1e1e1e;
+            border-radius: 8px;
+            border-left: 5px solid #444;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            height: 80px;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            overflow: hidden; /* Garante que nada saia do card */
+        }
+
+        /* Metade da Esquerda */
+        .device-info {
+            flex: 1; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;      /* Centraliza horizontalmente na metade */
+            justify-content: center;  /* Centraliza verticalmente */
+            text-align: center;
+        }
+
+        /* Metade da Direita */
+        .device-status-right {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;  /* Centraliza o MS na metade dele */
+        }
+
+        .device-name { 
+            font-size: 1.4em; /* Reduzi levemente para não quebrar */
+            margin-bottom: 5px; 
+            line-height: 1.2; 
+        }
+
+        .device-ip { 
+            font-size: 1.4em; /* Reduzi para caber melhor */
+            opacity: 0.4; 
+            margin: 0; 
+            line-height: 1.2; 
+        }
+
+        .device-latency { 
+            font-size: 1.5em; 
+            font-weight: bold; 
+        }
+        
+    </style>
+</head>
+<body>
+    <h2>MONITORAMENTO 262</h2>
+    <div id="lista-dispositivos">Iniciando varredura...</div>
+
+    <script>
+        function atualizar() {
+            fetch(`/status`)
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('lista-dispositivos');
+                    let htmlColetado = '';
+
+                    Object.entries(data).forEach(([nome, info]) => {
+                        const isHighLatency = info.latencia !== null && info.latencia > 900;
+                        const isOnline = info.status === "ONLINE" && !isHighLatency;
+                        const classeStatus = isOnline ? 'online' : 'offline';
+
+                        htmlColetado += `
+                            <div class="card ${classeStatus}">
+                                <div class="device-info">
+                                    <span class="device-name">${nome}</span>
+                                    <span class="device-ip">${info.ip}</span>
+                                </div>
+                                <div class="device-status-right">
+                                    ${info.latencia !== null ? `<span class="device-latency">${info.latencia} ms</span>` : '<span class="device-latency">---</span>'}
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    container.innerHTML = htmlColetado;
+                })
+                .catch(err => {
+                    document.getElementById('lista-dispositivos').innerHTML =
+                        `<div style="color:orange; text-align: center; width: 100%;">Tentando reconectar à API...</div>`;
+                });
+        }
+
+        setInterval(atualizar, 1200);
+        atualizar();
+    </script>
+</body>
+</html>
